@@ -62,8 +62,8 @@ INCLUDE_DIRECTORIES( ${Boost_INCLUDE_DIR} )
 add_definitions(-D_FILE_OFFSET_BITS=64)
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR} )
 
-set ( SOURCES main.cpp )
-set ( HEADERS )
+set ( SOURCES main.cpp input-reader.cpp )
+set ( HEADERS          input-reader.hpp )
 
 add_executable( dt-symlinks-manager ${SOURCES} ${HEADERS})
 target_link_libraries( dt-symlinks-manager ${Boost_LIBRARIES} )

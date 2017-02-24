@@ -37,9 +37,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
-const size_t max_buf_size = 64 * 1024;
-char buffer[max_buf_size + 1];
-size_t buffer_used = 0;
+#include "input-reader.hpp"
 
 std::map<std::string, std::string> read_config(const std::string &config_file_name)
 {
@@ -154,6 +152,8 @@ int main(int argc, char **argv)
 
 		directories_map = read_config(config_name);
 
+		InputReader input_reader(64 * 1024);
+
 		do
 		{
 			fprintf(stdout, "Select directory to modify symlinks in:\n\n");
@@ -168,87 +168,48 @@ int main(int argc, char **argv)
 
 			fprintf(stdout, "q) Use \"q\" or \"quit\" to exit application\n\n");
 
-			bool continue_reading = true;
-
-			do
+			for (;;)
 			{
 				fprintf(stdout, "> ");
 				fflush(stdout);
 
-				ssize_t read_size = read(STDIN_FILENO, &buffer[buffer_used], max_buf_size - buffer_used);
-				if (read_size < 0)
+				std::string command = input_reader.readInput();
+
+				boost::trim(command);
+				boost::to_lower(command);
+
+				if (command.empty())
 				{
-					throw std::runtime_error("Failed to read command from input");
+					// NOTE: ignore empty command
 				}
-				else if (read_size == 0)
+				else if ((command == "q") || (command == "quit"))
 				{
-					continue;
-				}
-
-				buffer_used += read_size;
-
-				char *newline = (char*) memchr(buffer, '\n', buffer_used);
-				if (newline != NULL)
-				{
-					do
-					{
-						std::string command(buffer, newline);
-
-						boost::trim(command);
-						boost::to_lower(command);
-
-						if (command.empty())
-						{
-							// NOTE: ignore empty command
-						}
-						else if ((command == "q") || (command == "quit"))
-						{
-							run = false;
-						}
-						else
-						{
-							boost::optional<ssize_t> index;
-
-							try
-							{
-								index = boost::lexical_cast<ssize_t>(command);
-							}
-							catch (const boost::bad_lexical_cast &)
-							{
-								// NOTE: ignore exception;
-							}
-
-							if (index)
-							{
-								// TODO: process command: check that number is actually in range
-							}
-							else
-							{
-								fprintf(stderr, "Failed to recognize command: %s\n", command.c_str());
-							}
-						}
-
-						buffer_used -= newline - buffer + 1;
-						if (buffer_used > 0)
-						{
-							memmove(buffer, newline + 1, buffer_used);
-							newline = (char*) memchr(buffer, '\n', buffer_used);
-						}
-						else
-						{
-							break;
-						}
-					} while (run && continue_reading && (newline != NULL));
+					run = false;
+					break;
 				}
 				else
 				{
-					if (buffer_used == max_buf_size)
+					boost::optional<ssize_t> index;
+
+					try
 					{
-						throw std::runtime_error("Failed to read command from input: command is too long");
+						index = boost::lexical_cast<ssize_t>(command);
 					}
-					// else: continue
+					catch (const boost::bad_lexical_cast &)
+					{
+						// NOTE: ignore exception;
+					}
+
+					if (index)
+					{
+						// TODO: process command: check that number is actually in range
+					}
+					else
+					{
+						fprintf(stderr, "Failed to recognize command: %s\n", command.c_str());
+					}
 				}
-			} while (run && continue_reading);
+			}
 		} while (run);
 	}
 	catch (const std::exception &exc)
