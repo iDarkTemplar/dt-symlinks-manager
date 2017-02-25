@@ -36,8 +36,34 @@
 #include <boost/optional.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include "input-reader.hpp"
+
+enum class file_type
+{
+	not_existent,
+	regular,
+	directory,
+	symlink_good,
+	symlink_bad,
+	symlink_nonexistent,
+	unknown
+};
+
+struct entry_state
+{
+	bool file_is_present;
+	file_type symlink_state;
+
+	entry_state()
+		: file_is_present(false),
+		symlink_state(file_type::not_existent)
+	{
+	}
+};
+
+typedef std::map<std::string, entry_state> entries_state_map_t;
 
 std::map<std::string, std::string> read_config(const std::string &config_file_name)
 {
@@ -100,6 +126,347 @@ std::map<std::string, std::string> read_config(const std::string &config_file_na
 	return result;
 }
 
+void list_files_in_directory(const std::string &location, entries_state_map_t &entries_map)
+{
+	struct stat buffer;
+
+	if (stat(location.c_str(), &buffer) != -1)
+	{
+		if (S_ISDIR(buffer.st_mode))
+		{
+			DIR *dirp;
+
+			if ((dirp = opendir(location.c_str())) != NULL)
+			{
+				try
+				{
+					struct dirent *dp;
+
+					for (;;)
+					{
+						dp = readdir(dirp);
+
+						if (dp == NULL)
+						{
+							break;
+						}
+
+						if ((strcmp(dp->d_name,".") != 0) && (strcmp(dp->d_name,"..") != 0) && (dp->d_type == DT_REG))
+						{
+							entries_map[dp->d_name].file_is_present = true;
+						}
+					}
+				}
+				catch (...)
+				{
+					closedir(dirp);
+					throw;
+				}
+
+				closedir(dirp);
+			}
+		}
+	}
+}
+
+void string_replace_recursive(std::string &input, const char *search, const char *replace)
+{
+	size_t cur_size = input.size();
+	size_t last_size = cur_size;
+
+	for (;;)
+	{
+		boost::replace_all(input, search, replace);
+		cur_size = input.size();
+		if (cur_size >= last_size)
+		{
+			break;
+		}
+
+		last_size = cur_size;
+	}
+}
+
+std::string compose_filename(const std::string &directory_of_file, const std::string &filename)
+{
+	std::stringstream composed_filename_str;
+	composed_filename_str << directory_of_file << '/' << filename;
+	std::string composed_filename = composed_filename_str.str();
+
+	string_replace_recursive(composed_filename, "//", "/");
+
+	return composed_filename;
+}
+
+void list_files_in_directory_with_state(const std::string &location, const std::string &symlinks_destination, entries_state_map_t &entries_map)
+{
+	struct stat buffer;
+
+	if (stat(location.c_str(), &buffer) != -1)
+	{
+		if (S_ISDIR(buffer.st_mode))
+		{
+			DIR *dirp;
+
+			if ((dirp = opendir(location.c_str())) != NULL)
+			{
+				try
+				{
+					struct dirent *dp;
+
+					for (;;)
+					{
+						dp = readdir(dirp);
+
+						if (dp == NULL)
+						{
+							break;
+						}
+
+						if ((strcmp(dp->d_name,".") != 0) && (strcmp(dp->d_name,"..") != 0))
+						{
+							if (dp->d_type == DT_REG)
+							{
+								entries_map[dp->d_name].symlink_state = file_type::regular;
+							}
+							else if (dp->d_type == DT_DIR)
+							{
+								entries_map[dp->d_name].symlink_state = file_type::directory;
+							}
+							else if (dp->d_type == DT_LNK)
+							{
+								char link_buffer[PATH_MAX + 1];
+
+								std::string filename = compose_filename(location, dp->d_name);
+
+								ssize_t result = readlink(filename.c_str(), link_buffer, PATH_MAX);
+								if (result >= 0)
+								{
+									std::string result_symlink = std::string(link_buffer, link_buffer + result);
+									string_replace_recursive(result_symlink, "//", "/");
+
+									std::string expected_symlink = compose_filename(symlinks_destination, dp->d_name);
+
+									// if result does not exist, then it's nonexistent
+									// if result does not match expected, it's bad
+									// otherwise it's ok
+
+									if (expected_symlink == result_symlink)
+									{
+										entries_map[dp->d_name].symlink_state = file_type::symlink_good;
+									}
+									else
+									{
+										if ((stat(filename.c_str(), &buffer) != -1) && (S_ISREG(buffer.st_mode)))
+										{
+											entries_map[dp->d_name].symlink_state = file_type::symlink_bad;
+										}
+										else
+										{
+											entries_map[dp->d_name].symlink_state = file_type::symlink_nonexistent;
+										}
+									}
+								}
+								else
+								{
+									entries_map[dp->d_name].symlink_state = file_type::unknown;
+								}
+							}
+							else
+							{
+								entries_map[dp->d_name].symlink_state = file_type::unknown;
+							}
+						}
+					}
+				}
+				catch (...)
+				{
+					closedir(dirp);
+					throw;
+				}
+
+				closedir(dirp);
+			}
+		}
+	}
+}
+
+void remove_file(const std::string &file)
+{
+	if (unlink(file.c_str()) < 0)
+	{
+		fprintf(stderr, "Failed to remove file: %s\n", file.c_str());
+	}
+}
+
+void create_symlink(const std::string &real_location, const std::string &symlink_location)
+{
+	if (symlink(real_location.c_str(), symlink_location.c_str()) < 0)
+	{
+		fprintf(stderr, "Failed to create symlink %s pointing to %s\n", symlink_location.c_str(), real_location.c_str());
+	}
+}
+
+void process_directory(InputReader &input_reader, const std::string &files_directory, const std::string &symlinks_directory)
+{
+	// first: read all files in files_directory
+	// second: read all symlinks in symlinks directory and their locations.
+	//	if symlinks is broken (dead), autoremove it
+	//	if it's a file, report it
+	//	if it's a symlink to a wrong location, report it
+	//	for everything else, allow toggling
+
+	bool run = true;
+
+	do
+	{
+		entries_state_map_t entries_map;
+
+		list_files_in_directory(files_directory, entries_map);
+		list_files_in_directory_with_state(symlinks_directory, files_directory, entries_map);
+
+		{
+			auto iter_end = entries_map.end();
+
+			for (auto iter = entries_map.begin(); iter != iter_end; )
+			{
+				if ((iter->second.file_is_present) || (iter->second.symlink_state != file_type::symlink_good))
+				{
+					++iter;
+				}
+				else
+				{
+					std::string expected_symlink = compose_filename(symlinks_directory, iter->first);
+					remove_file(expected_symlink);
+
+					iter = entries_map.erase(iter);
+				}
+			}
+		}
+
+		{
+			fprintf(stdout, "\nSelect symlink to toggle state for:\n\n");
+
+			size_t index = 0;
+			auto iter_end = entries_map.end();
+
+			for (auto iter = entries_map.begin(); iter != iter_end; ++iter, ++index)
+			{
+				char state = ' ';
+
+				switch (iter->second.symlink_state)
+				{
+				case file_type::not_existent:
+					state = ' ';
+					break;
+
+				case file_type::symlink_good:
+					state = '*';
+					break;
+
+				case file_type::regular:
+				case file_type::directory:
+				case file_type::symlink_bad:
+				case file_type::symlink_nonexistent:
+				case file_type::unknown:
+				default:
+					state = 'E';
+					break;
+				}
+
+				std::string full_name = compose_filename(files_directory, iter->first);
+
+				fprintf(stdout, "%zu) [%c] %s\n", index, state, full_name.c_str());
+			}
+
+			fprintf(stdout, "q) Use \"q\" or \"quit\" to exit current menu\n\n");
+		}
+
+		for (;;)
+		{
+			fprintf(stdout, "> ");
+			fflush(stdout);
+
+			std::string command = input_reader.readInput();
+
+			boost::trim(command);
+			boost::to_lower(command);
+
+			if (command.empty())
+			{
+				// NOTE: ignore empty command
+			}
+			else if ((command == "q") || (command == "quit"))
+			{
+				run = false;
+				break;
+			}
+			else
+			{
+				boost::optional<ssize_t> index;
+
+				try
+				{
+					index = boost::lexical_cast<ssize_t>(command);
+				}
+				catch (const boost::bad_lexical_cast &)
+				{
+					// NOTE: ignore exception;
+				}
+
+				if (index && (*index >= 0) && (*index < entries_map.size()))
+				{
+					size_t current_index = 0;
+					auto iter = entries_map.begin();
+					auto iter_end = entries_map.end();
+
+					for ( ; (current_index != *index) && (iter != iter_end); ++iter, ++current_index)
+					{
+					}
+
+					if (iter != iter_end)
+					{
+						switch (iter->second.symlink_state)
+						{
+						case file_type::not_existent:
+							{
+								std::string real_location = compose_filename(files_directory, iter->first);
+								std::string symlink_location = compose_filename(symlinks_directory, iter->first);
+								create_symlink(real_location, symlink_location);
+							}
+							break;
+
+						case file_type::symlink_good:
+							{
+								std::string symlink_location = compose_filename(symlinks_directory, iter->first);
+								remove_file(symlink_location);
+							}
+							break;
+
+						case file_type::regular:
+						case file_type::directory:
+						case file_type::symlink_bad:
+						case file_type::symlink_nonexistent:
+						case file_type::unknown:
+						default:
+							{
+								std::string symlink_location = compose_filename(symlinks_directory, iter->first);
+								fprintf(stderr, "Failed to toggle state of symlink %s: it's in invalid state, please check manually\n", symlink_location.c_str());
+							}
+							break;
+						}
+						break;
+					}
+				}
+				else
+				{
+					fprintf(stderr, "Failed to recognize command: %s\n", command.c_str());
+				}
+			}
+		}
+	} while (run);
+}
+
 void print_help(const char *name)
 {
 	fprintf(stderr,
@@ -156,17 +523,19 @@ int main(int argc, char **argv)
 
 		do
 		{
-			fprintf(stdout, "Select directory to modify symlinks in:\n\n");
-
-			size_t index = 0;
-			auto iter_end = directories_map.end();
-
-			for (auto iter = directories_map.begin(); iter != iter_end; ++iter, ++index)
 			{
-				fprintf(stdout, "%zu) %s\n", index, iter->first.c_str());
-			}
+				fprintf(stdout, "Select directory to modify symlinks in:\n\n");
 
-			fprintf(stdout, "q) Use \"q\" or \"quit\" to exit application\n\n");
+				size_t index = 0;
+				auto iter_end = directories_map.end();
+
+				for (auto iter = directories_map.begin(); iter != iter_end; ++iter, ++index)
+				{
+					fprintf(stdout, "%zu) %s\n", index, iter->first.c_str());
+				}
+
+				fprintf(stdout, "q) Use \"q\" or \"quit\" to exit application\n\n");
+			}
 
 			for (;;)
 			{
@@ -200,9 +569,22 @@ int main(int argc, char **argv)
 						// NOTE: ignore exception;
 					}
 
-					if (index)
+					if (index && (*index >= 0) && (*index < directories_map.size()))
 					{
-						// TODO: process command: check that number is actually in range
+						size_t current_index = 0;
+						auto iter = directories_map.begin();
+						auto iter_end = directories_map.end();
+
+						for ( ; (current_index != *index) && (iter != iter_end); ++iter, ++current_index)
+						{
+						}
+
+						if (iter != iter_end)
+						{
+							process_directory(input_reader, iter->second, iter->first);
+							fprintf(stdout, "\n");
+							break;
+						}
 					}
 					else
 					{
