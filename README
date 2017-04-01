@@ -1,0 +1,5 @@
+dt-symlinks-manager is a simple symlinks manager inspired by eselect
+
+It's mainly used to manage symlinks for dot-files.
+
+Config file has simple format, it's described in comments in default config file dt-symlinks-manager.conf
