@@ -4,7 +4,7 @@ cmake_minimum_required( VERSION 2.8.8 )
 
 set(DTSM_VERSION_MAJOR 1)
 set(DTSM_VERSION_MINOR 0)
-set(DTSM_VERSION_PATCH 0)
+set(DTSM_VERSION_PATCH 1)
 set(DTSM_VERSION "${DTSM_VERSION_MAJOR}.${DTSM_VERSION_MINOR}.${DTSM_VERSION_PATCH}")
 
 set(CPACK_PACKAGE_VERSION_MAJOR ${DTSM_VERSION_MAJOR})
@@ -54,10 +54,14 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set (CMAKE_CXX_FLAGS_DEBUG ${CMAKE_C_FLAGS_DEBUG})
 endif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
-
-FIND_PACKAGE( Boost COMPONENTS regex REQUIRED )
-INCLUDE_DIRECTORIES( ${Boost_INCLUDE_DIR} )
+if (USE_BOOST)
+	FIND_PACKAGE( Boost REQUIRED )
+	INCLUDE_DIRECTORIES( ${Boost_INCLUDE_DIR} )
+	add_definitions(-DUSE_BOOST=1)
+	set (CMAKE_CXX_STANDARD 11)
+else (USE_BOOST)
+	set (CMAKE_CXX_STANDARD 14)
+endif (USE_BOOST)
 
 add_definitions(-D_FILE_OFFSET_BITS=64)
 include_directories( ${CMAKE_CURRENT_SOURCE_DIR} )
@@ -66,7 +70,7 @@ set ( SOURCES main.cpp input-reader.cpp )
 set ( HEADERS          input-reader.hpp )
 
 add_executable( dt-symlinks-manager ${SOURCES} ${HEADERS})
-target_link_libraries( dt-symlinks-manager ${Boost_LIBRARIES} )
+target_link_libraries( dt-symlinks-manager )
 
 #ENABLE_TESTING()
 

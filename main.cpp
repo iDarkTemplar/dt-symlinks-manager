@@ -32,13 +32,90 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <boost/lexical_cast.hpp>
+#include "input-reader.hpp"
+
+#if USE_BOOST
+
 #include <boost/optional.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 
-#include "input-reader.hpp"
+template <typename T>
+using optional = boost::optional<T>;
+
+static inline void to_lower(std::string &value)
+{
+	boost::to_lower(value);
+}
+
+static inline void trim(std::string &value)
+{
+	boost::trim(value);
+}
+
+static inline void replace_all(std::string &input, const char *search, const char *replace)
+{
+	boost::replace_all(input, search, replace);
+}
+
+#else /* USE_BOOST */
+
+#include <algorithm>
+#include <cctype>
+#include <experimental/optional>
+
+template <typename T>
+using optional = std::experimental::optional<T>;
+
+static inline void to_lower(std::string &value)
+{
+	std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+}
+
+// trim from start (in place)
+static inline void ltrim(std::string &value)
+{
+	value.erase(
+		value.begin(),
+		std::find_if(value.begin(), value.end(), [](int ch)
+		{
+			return !std::isspace(ch);
+		}));
+}
+
+// trim from end (in place)
+static inline void rtrim(std::string &value)
+{
+	value.erase(
+		std::find_if(value.rbegin(), value.rend(), [](int ch)
+		{
+			return !std::isspace(ch);
+		}).base(),
+		value.end());
+}
+
+// trim from both ends (in place)
+static inline void trim(std::string &value)
+{
+	ltrim(value);
+	rtrim(value);
+}
+
+static inline void replace_all(std::string &input, const char *search, const char *replace)
+{
+	size_t pos = 0;
+	size_t replaced_len = strlen(search);
+	size_t replacing_len = strlen(replace);
+
+	while ((pos = input.find(search, pos)) != std::string::npos)
+	{
+		input.replace(pos, replaced_len, replace);
+		pos += replacing_len;
+	} while (pos != std::string::npos);
+}
+
+#endif /* USE_BOOST */
 
 enum class file_type
 {
@@ -84,7 +161,7 @@ std::map<std::string, std::string> read_config(const std::string &config_file_na
 	while (std::getline(infile, line))
 	{
 		++line_number;
-		boost::trim(line);
+		trim(line);
 
 		if (line.empty() || (line[0] == '#'))
 		{
@@ -110,8 +187,8 @@ std::map<std::string, std::string> read_config(const std::string &config_file_na
 			throw std::runtime_error(err.str());
 		}
 
-		boost::trim(dir_source);
-		boost::trim(dir_destination);
+		trim(dir_source);
+		trim(dir_destination);
 
 		if (result.find(dir_destination) != result.end())
 		{
@@ -176,7 +253,7 @@ void string_replace_recursive(std::string &input, const char *search, const char
 
 	for (;;)
 	{
-		boost::replace_all(input, search, replace);
+		replace_all(input, search, replace);
 		cur_size = input.size();
 		if (cur_size >= last_size)
 		{
@@ -389,8 +466,8 @@ void process_directory(InputReader &input_reader, const std::string &files_direc
 
 			std::string command = input_reader.readInput();
 
-			boost::trim(command);
-			boost::to_lower(command);
+			trim(command);
+			to_lower(command);
 
 			if (command.empty())
 			{
@@ -403,13 +480,13 @@ void process_directory(InputReader &input_reader, const std::string &files_direc
 			}
 			else
 			{
-				boost::optional<ssize_t> index;
+				optional<ssize_t> index;
 
 				try
 				{
-					index = boost::lexical_cast<ssize_t>(command);
+					index = std::stoull(command);
 				}
-				catch (const boost::bad_lexical_cast &)
+				catch (...)
 				{
 					// NOTE: ignore exception;
 				}
@@ -544,8 +621,8 @@ int main(int argc, char **argv)
 
 				std::string command = input_reader.readInput();
 
-				boost::trim(command);
-				boost::to_lower(command);
+				trim(command);
+				to_lower(command);
 
 				if (command.empty())
 				{
@@ -558,13 +635,13 @@ int main(int argc, char **argv)
 				}
 				else
 				{
-					boost::optional<ssize_t> index;
+					optional<ssize_t> index;
 
 					try
 					{
-						index = boost::lexical_cast<ssize_t>(command);
+						index = std::stoull(command);
 					}
-					catch (const boost::bad_lexical_cast &)
+					catch (...)
 					{
 						// NOTE: ignore exception;
 					}
