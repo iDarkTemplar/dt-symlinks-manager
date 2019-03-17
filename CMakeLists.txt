@@ -1,22 +1,8 @@
-project(DT-Symlinks-Manager)
+cmake_minimum_required( VERSION 3.12.0 )
 
-cmake_minimum_required( VERSION 2.8.8 )
-
-set(DTSM_VERSION_MAJOR 1)
-set(DTSM_VERSION_MINOR 0)
-set(DTSM_VERSION_PATCH 1)
-set(DTSM_VERSION "${DTSM_VERSION_MAJOR}.${DTSM_VERSION_MINOR}.${DTSM_VERSION_PATCH}")
-
-set(CPACK_PACKAGE_VERSION_MAJOR ${DTSM_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${DTSM_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${DTSM_VERSION_PATCH})
-set(CPACK_GENERATOR "TBZ2")
-set(CPACK_SOURCE_GENERATOR "TBZ2")
-set(CPACK_SOURCE_IGNORE_FILES
-	".git;build;CMakeLists.txt.user;CMakeLists.txt.user.*;ignore;TODO;cppcheck-linux.sh")
-set(CPACK_SOURCE_PACKAGE_FILE_NAME "${CMAKE_PROJECT_NAME}-${DTSM_VERSION}")
-# MUST be after CPACK_* variables.
-include(CPack)
+project(DT-Symlinks-Manager
+	VERSION 1.0.1
+	LANGUAGES CXX)
 
 # installation directory configuration
 set(CONFIG_DIR "/etc" CACHE PATH "Config files directory")
@@ -71,18 +57,6 @@ set ( HEADERS          input-reader.hpp )
 
 add_executable( dt-symlinks-manager ${SOURCES} ${HEADERS})
 target_link_libraries( dt-symlinks-manager )
-
-#ENABLE_TESTING()
-
-#set (TEST_SOURCES_commands tests/commands_test.c tests/dt_tests.h)
-#set (TEST_LIBS_commands dtmd-misc)
-
-#set (ALL_TESTS commands decode_label filesystem_opts)
-#foreach (CURRENT_TEST ${ALL_TESTS})
-#	add_executable( ${CURRENT_TEST}_test ${TEST_SOURCES_${CURRENT_TEST}})
-#	target_link_libraries( ${CURRENT_TEST}_test ${TEST_LIBS_${CURRENT_TEST}} )
-#	add_test( ${CURRENT_TEST}_test ${CMAKE_CURRENT_BINARY_DIR}/${CURRENT_TEST}_test )
-#endforeach (CURRENT_TEST)
 
 # installation config
 install(TARGETS dt-symlinks-manager RUNTIME DESTINATION ${SBIN_INSTALL_DIR})
