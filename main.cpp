@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017 i.Dark_Templar <darktemplar@dark-templar-archives.net>
+ * Copyright (C) 2017-2021 i.Dark_Templar <darktemplar@dark-templar-archives.net>
  *
  * This file is part of DT Symlinks Manager.
  *
@@ -18,55 +18,24 @@
  *
  */
 
-#include <string>
-#include <vector>
-#include <set>
-#include <map>
-#include <functional>
-#include <sstream>
-#include <fstream>
-
+#include <dirent.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <dirent.h>
-#include <string.h>
-#include <stdio.h>
-
-#include "input-reader.hpp"
-
-#if USE_BOOST
-
-#include <boost/optional.hpp>
-#include <boost/algorithm/string/trim.hpp>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/replace.hpp>
-
-template <typename T>
-using optional = boost::optional<T>;
-
-static inline void to_lower(std::string &value)
-{
-	boost::to_lower(value);
-}
-
-static inline void trim(std::string &value)
-{
-	boost::trim(value);
-}
-
-static inline void replace_all(std::string &input, const char *search, const char *replace)
-{
-	boost::replace_all(input, search, replace);
-}
-
-#else /* USE_BOOST */
 
 #include <algorithm>
 #include <cctype>
-#include <experimental/optional>
+#include <fstream>
+#include <functional>
+#include <map>
+#include <optional>
+#include <set>
+#include <sstream>
+#include <string>
+#include <vector>
 
-template <typename T>
-using optional = std::experimental::optional<T>;
+#include "input-reader.hpp"
 
 static inline void to_lower(std::string &value)
 {
@@ -114,8 +83,6 @@ static inline void replace_all(std::string &input, const char *search, const cha
 		pos += replacing_len;
 	} while (pos != std::string::npos);
 }
-
-#endif /* USE_BOOST */
 
 enum class file_type
 {
@@ -217,11 +184,9 @@ void list_files_in_directory(const std::string &location, entries_state_map_t &e
 			{
 				try
 				{
-					struct dirent *dp;
-
 					for (;;)
 					{
-						dp = readdir(dirp);
+						struct dirent *dp = readdir(dirp);
 
 						if (dp == NULL)
 						{
@@ -289,11 +254,9 @@ void list_files_in_directory_with_state(const std::string &location, const std::
 			{
 				try
 				{
-					struct dirent *dp;
-
 					for (;;)
 					{
-						dp = readdir(dirp);
+						struct dirent *dp = readdir(dirp);
 
 						if (dp == NULL)
 						{
@@ -480,7 +443,7 @@ void process_directory(InputReader &input_reader, const std::string &files_direc
 			}
 			else
 			{
-				optional<ssize_t> index;
+				std::optional<ssize_t> index;
 
 				try
 				{
@@ -635,7 +598,7 @@ int main(int argc, char **argv)
 				}
 				else
 				{
-					optional<ssize_t> index;
+					std::optional<ssize_t> index;
 
 					try
 					{
